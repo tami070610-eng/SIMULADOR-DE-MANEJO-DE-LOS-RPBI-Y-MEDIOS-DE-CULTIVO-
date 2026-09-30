@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Misión Bacteriología</title>
+<style>
+:root{--bg:#E6EEE9;--ink:#12302F;--card:#fff;--naranja:#E8621A;--agar:#D9A21B;--ok:#1F7A4D;--mal:#B8322A;--linea:#B9CBC3}
+@media (prefers-color-scheme:dark){:root{--bg:#0F2322;--ink:#E4EFEA;--card:#173432;--linea:#2F5450}}
+*{box-sizing:border-box}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--ink);font-family:"Trebuchet MS",Verdana,sans-serif;line-height:1.5;display:flex;justify-content:center}
+main{width:100%;max-width:560px;padding:20px 18px 40px}
+.barra{height:8px;background:var(--linea);border-radius:99px;overflow:hidden;margin:0 50px 6px 0}
+.barra i{display:block;height:100%;background:var(--naranja);width:0;transition:width .3s}
+.pos{font-size:.8rem;margin:0 0 18px;opacity:.75}
+.tarjeta{background:var(--card);border:2px solid var(--linea);border-radius:14px;padding:22px 16px}
+h1{font-size:2rem;line-height:1.1;margin:0 0 12px}
+h2{font-size:1.35rem;line-height:1.2;margin:0 0 12px}
+.nivel{display:inline-block;background:var(--ink);color:var(--bg);border-radius:6px;padding:2px 10px;font-size:.85rem;margin-bottom:12px}
+p{margin:0 0 12px}
+button{font:inherit;cursor:pointer}
+.btn{background:var(--naranja);color:#fff;border:0;border-radius:10px;padding:12px 22px;font-weight:bold;margin:4px 6px 4px 0}
+.btn[disabled]{opacity:.45;cursor:default}
+.btn:focus-visible,.bote:focus-visible,.placa:focus-visible{outline:3px solid var(--agar);outline-offset:2px}
+.arte{display:block;width:100%;max-width:340px;margin:0 auto 14px}
+.fila{display:flex;gap:6px;justify-content:center;margin-bottom:14px}
+.fila svg{width:31%;height:auto}
+.item{text-align:center;margin-bottom:4px}
+.item svg{width:130px;height:auto}
+.nombre{text-align:center;font-weight:bold}
+.bines{display:flex;gap:8px;margin-bottom:12px}
+.placas{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.bote,.placa{flex:1;background:transparent;border:2px solid var(--linea);border-radius:12px;padding:6px 4px;color:var(--ink);font-size:.8rem}
+.bote svg,.placa svg{width:100%;height:auto;display:block}
+.bote span,.placa span{display:block;text-align:center}
+.bote.bien,.placa.bien{border-color:var(--ok);background:rgba(31,122,77,.15)}
+.fb{border-left:5px solid var(--agar);padding:8px 12px;margin:6px 0 10px}
+.fb.bien{border-color:var(--ok)}.fb.mal{border-color:var(--mal)}
+.puntos{font-size:2.6rem;font-weight:bold;margin:0 0 8px}
+canvas{display:block;width:100%;max-width:300px;margin:0 auto 12px;touch-action:none;border-radius:50%}
+.entra{animation:cae .6s forwards}
+.tiembla{animation:tiembla .35s}
+@keyframes cae{to{transform:translateY(130px) scale(.2);opacity:0}}
+@keyframes tiembla{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.mus{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));right:12px;width:44px;height:44px;border-radius:50%;border:2px solid var(--linea);background:var(--card);font-size:1.3rem;line-height:1;padding:0;z-index:5}
+@media (prefers-reduced-motion:reduce){.barra i{transition:none}.entra,.tiembla{animation:none}}
+</style>
+</head>
+<body>
+<button class="mus" id="mus" aria-label="Silenciar sonido" title="Sonido">🔊</button>
+<main>
+  <div class="barra"><i id="prog"></i></div>
+  <p class="pos" id="pos"></p>
+  <section class="tarjeta" id="pantalla" aria-live="polite"></section>
+</main>
+<script>
+/* ---------- Audio ---------- */
+let ac = null, sonidoOn = true, tmr = null, paso = 0;
+const mel = [262,330,392,330,294,349,440,349,262,330,392,523,392,330,294,262];
+function audio(){
+  if(!ac){ const A = window.AudioContext || window.webkitAudioContext; if(!A) return null; ac = new A(); }
+  if(ac.state === 'suspended') ac.resume();
+  return ac;
+}
+function tono(f, t0, d, tipo, vol){
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = tipo; o.frequency.value = f;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + d);
+  o.connect(g); g.connect(ac.destination);
+  o.start(t0); o.stop(t0 + d + 0.05);
+}
+function sonido(tipo){
+  if(!sonidoOn || !audio()) return;
+  const t = ac.currentTime;
+  if(tipo === 'bien'){ tono(660, t, .15, 'sine', .25); tono(880, t + .12, .3, 'sine', .25); }
+  else if(tipo === 'mal'){ tono(200, t, .3, 'sawtooth', .15); tono(150, t + .15, .4, 'sawtooth', .15); }
+  else if(tipo === 'fin'){ [523,659,784,1047].forEach((f, k) => tono(f, t + k * .15, .35, 'triangle', .25)); }
+  else { tono(440, t, .06, 'square', .06); }
+}
+function musica(){
+  if(tmr) return;
+  tmr = setInterval(() => { if(ac && sonidoOn){ tono(mel[paso % mel.length], ac.currentTime, .35, 'triangle', .05); paso++; } }, 420);
+}
+document.addEventListener('pointerdown', () => { audio(); musica(); }, {once:true});
+document.getElementById('mus').onclick = e => {
+  sonidoOn = !sonidoOn;
+  e.currentTarget.textContent = sonidoOn ? '🔊' : '🔇';
+  e.currentTarget.setAttribute('aria-label', sonidoOn ? 'Silenciar sonido' : 'Activar sonido');
+  if(sonidoOn){ audio(); musica(); }
+};
+
+/* ---------- Dibujos ---------- */
+const COL = [[-15,-12],[10,-18],[18,8],[-8,12],[0,-2],[-22,4],[22,-6],[6,22]];
+function plato(x, fondo, col, halo){
+  let g = '<circle cx="'+x+'" cy="55" r="46" fill="#dfeee9" stroke="#7fa79c" stroke-width="3"/><circle cx="'+x+'" cy="55" r="39" fill="'+fondo+'"/>';
+  COL.forEach(c => {
+    if(halo) g += '<circle cx="'+(x+c[0])+'" cy="'+(55+c[1])+'" r="9" fill="'+halo+'" opacity=".75"/>';
+    g += '<circle cx="'+(x+c[0])+'" cy="'+(55+c[1])+'" r="4" fill="'+col+'"/>';
+  });
+  return g;
+}
+function bolsa(x, color){
+  return '<path d="M'+(x-26)+' 34 h52 l6 68 h-64z" fill="'+color+'"/><path d="M'+(x-9)+' 34 l9 -16 l9 16z" fill="'+color+'"/>';
+}
+const pl = (fondo, col, halo) => '<svg viewBox="0 0 100 110">'+plato(50, fondo, col, halo)+'</svg>';
+const bio = '<text x="50" y="82" font-size="26" text-anchor="middle" fill="#fff">☣</text>';
+function bote(k){
+  const c = ['#C8352B','#E6B800'];
+  if(k < 2) return '<svg viewBox="0 0 100 110" aria-hidden="true">'+bolsa(50, c[k])+bio+'</svg>';
+  return '<svg viewBox="0 0 100 110" aria-hidden="true"><rect x="18" y="40" width="64" height="62" rx="6" fill="#C8352B"/><rect x="12" y="30" width="76" height="14" rx="4" fill="#9E2820"/><rect x="38" y="35" width="24" height="4" fill="#12302F"/>'+bio+'</svg>';
+}
+const BOTES = ['Bolsa roja','Bolsa amarilla','Recipiente rígido rojo'];
+const ART = {
+  portada: '<svg class="arte" viewBox="0 0 340 110" role="img" aria-label="Bolsas RPBI y cajas de Petri">'+plato(52,'#E6D08A','#F7F1D3')+bolsa(140,'#C8352B')+plato(230,'#E9A1B0','#B0124F')+bolsa(305,'#E6B800')+'</svg>',
+  botes: '<div class="fila">'+bote(0)+bote(1)+bote(2)+'</div>',
+  placas: '<div class="fila" style="gap:2px">'+pl('#E6D08A','#F7F1D3')+pl('#E9A1B0','#B0124F')+pl('#6B3F26','#E8D9BC')+'</div>'
+};
+const IT = {
+  aguja: '<rect x="30" y="40" width="50" height="18" rx="3" fill="#fff" stroke="#12302F" stroke-width="3"/><rect x="80" y="47" width="32" height="4" fill="#9aa9a4"/><rect x="18" y="36" width="6" height="26" fill="#12302F"/><rect x="22" y="47" width="10" height="4" fill="#12302F"/><rect x="42" y="44" width="20" height="10" fill="#B8322A"/>',
+  lanceta: '<rect x="20" y="42" width="48" height="16" rx="8" fill="#2E6FA8"/><polygon points="68,50 104,50 68,44" fill="#cfd8dc"/><circle cx="108" cy="52" r="4" fill="#B8322A"/>',
+  guantes: '<rect x="35" y="50" width="46" height="42" rx="10" fill="#7CC4E8" stroke="#3B88B5" stroke-width="2"/><rect x="35" y="14" width="10" height="42" rx="5" fill="#7CC4E8" stroke="#3B88B5" stroke-width="2"/><rect x="47" y="8" width="10" height="46" rx="5" fill="#7CC4E8" stroke="#3B88B5" stroke-width="2"/><rect x="59" y="12" width="10" height="42" rx="5" fill="#7CC4E8" stroke="#3B88B5" stroke-width="2"/><rect x="71" y="20" width="10" height="36" rx="5" fill="#7CC4E8" stroke="#3B88B5" stroke-width="2"/><circle cx="58" cy="72" r="9" fill="#B8322A"/>',
+  algodon: '<circle cx="45" cy="60" r="22" fill="#fff" stroke="#b9cbc3" stroke-width="2"/><circle cx="70" cy="50" r="24" fill="#fff" stroke="#b9cbc3" stroke-width="2"/><circle cx="78" cy="72" r="20" fill="#fff" stroke="#b9cbc3" stroke-width="2"/><circle cx="62" cy="60" r="11" fill="#B8322A"/>',
+  petri: plato(60,'#E6D08A','#F7F1D3'),
+  petri2: plato(60,'#E9A1B0','#B0124F'),
+  tejido: '<ellipse cx="60" cy="58" rx="42" ry="30" fill="#fff" stroke="#b9cbc3" stroke-width="3"/><path d="M36 58 q10 -24 30 -14 q18 8 10 22 q-16 16 -42 -8z" fill="#D9838F"/>'
+};
+
+/* ---------- Pantallas ---------- */
+const P = [
+ {t:'info', art:'portada', h:'Misión Bacteriología', x:['Separa los residuos peligrosos en su bote y siembra tu propio cultivo.'], b:'Jugar'},
+ {t:'info', art:'botes', h:'Tu misión', x:['Nivel 1: deposita cada residuo en su bote. Nivel 2: prepara un cultivo paso a paso. Puedes sumar hasta 10 puntos.'], b:'Entendido'},
+ {t:'info', nivel:'Nivel 1', art:'botes', h:'RPBI: separa la basura', x:['Toca el bote correcto para cada residuo. Si te equivocas, inténtalo otra vez.'], b:'Empezar nivel 1'},
+ {t:'item', nivel:'Nivel 1', id:'aguja', n:'Aguja usada', bin:2, e:'Los punzocortantes van en recipiente rígido rojo, sin reencapuchar.'},
+ {t:'item', nivel:'Nivel 1', id:'guantes', n:'Guantes con sangre', bin:0, e:'Los materiales con sangre no líquida van en bolsa roja.'},
+ {t:'item', nivel:'Nivel 1', id:'algodon', n:'Algodón con sangre', bin:0, e:'El algodón y las gasas con sangre van en bolsa roja.'},
+ {t:'item', nivel:'Nivel 1', id:'petri', n:'Caja de Petri con cultivo', bin:0, e:'Los cultivos y cepas de agentes infecciosos van en bolsa roja.'},
+ {t:'item', nivel:'Nivel 1', id:'tejido', n:'Tejido de biopsia', bin:1, e:'Los residuos patológicos (tejidos, órganos) van en bolsa amarilla.'},
+ {t:'item', nivel:'Nivel 1', id:'lanceta', n:'Lanceta usada', bin:2, e:'Las lancetas también son punzocortantes: recipiente rígido rojo.'},
+ {t:'info', nivel:'Nivel 2', art:'placas', h:'Así se hace un cultivo', x:() => ['Nivel 1: '+[3,4,5,6,7,8].filter(k => ganado[k]).length+' / 6 a la primera.','Ahora vas a elegir el medio, tomar la muestra, sembrarla e incubarla.'], b:'Empezar nivel 2'},
+ {t:'medio', nivel:'Nivel 2'},
+ {t:'asa', nivel:'Nivel 2'},
+ {t:'siembra', nivel:'Nivel 2'},
+ {t:'incuba', nivel:'Nivel 2'},
+ {t:'item', nivel:'Reto final', id:'petri2', n:'Tu caja MacConkey con colonias rosas', bin:0, pts:2, e:'Las cajas con cultivo se desechan como RPBI en bolsa roja.'},
+ {t:'fin'}
+];
+const rangos = [[9,'Bacteriólogo experto','Dominas el RPBI y el cultivo.'],[6,'Técnico de laboratorio','Vas muy bien. Repasa lo que fallaste.'],[0,'Aprendiz','Repasa el RPBI y los pasos del cultivo y vuelve a intentarlo.']];
+const pantalla = document.getElementById('pantalla');
+let i = 0, pts = 0, ganado = {};
+const el = (tag, cls, txt) => { const n = document.createElement(tag); if(cls) n.className = cls; if(txt != null) n.textContent = txt; return n; };
+const dib = (cls, html) => { const d = el('div', cls); d.innerHTML = html; return d; };
+function boton(txt, fn, cont){
+  const b = el('button', 'btn', txt);
+  b.onclick = () => { sonido('clic'); fn(); };
+  (cont || pantalla).append(b); return b;
+}
+function siguiente(){ i++; mostrar(); window.scrollTo(0,0); }
+function mostrar(){
+  const s = P[i];
+  document.getElementById('prog').style.width = ((i+1)/P.length*100)+'%';
+  document.getElementById('pos').textContent = 'Pantalla '+(i+1)+' de '+P.length;
+  pantalla.innerHTML = '';
+  if(s.nivel) pantalla.append(el('span', 'nivel', s.nivel));
+  ({info, item, medio, asa, siembra, incuba, fin})[s.t](s);
+}
+function info(s){
+  if(s.art) pantalla.append(dib('', ART[s.art]));
+  pantalla.append(el(i === 0 ? 'h1' : 'h2', null, s.h));
+  (typeof s.x === 'function' ? s.x() : s.x).forEach(t => pantalla.append(el('p', null, t)));
+  boton(s.b, siguiente);
+}
+function acierto(b, fb, texto, dibujo){
+  sonido('bien'); if(b) b.classList.add('bien');
+  fb.innerHTML = ''; fb.append(el('p', 'fb bien', 'Correcto. ' + texto));
+  boton('Siguiente', siguiente, fb);
+}
+function fallo(b, fb, texto){
+  sonido('mal'); b.classList.remove('tiembla'); void b.offsetWidth; b.classList.add('tiembla');
+  fb.innerHTML = ''; fb.append(el('p', 'fb mal', texto));
+}
+function item(s){
+  pantalla.append(el('h2', null, 'Toca el bote correcto'));
+  const d = dib('item', '<svg viewBox="0 0 120 110" role="img" aria-label="'+s.n+'">'+IT[s.id]+'</svg>');
+  const fila = el('div', 'bines'), fb = el('div');
+  let err = false, listo = false;
+  pantalla.append(d, el('p', 'nombre', s.n));
+  BOTES.forEach((n, k) => {
+    const b = el('button', 'bote'); b.innerHTML = bote(k) + '<span>'+n+'</span>';
+    b.onclick = () => {
+      if(listo) return;
+      if(k === s.bin){ listo = true; if(!err){ pts += s.pts || 1; ganado[i] = 1; } d.classList.add('entra'); acierto(b, fb, s.e); }
+      else { err = true; fallo(b, fb, 'Ahí no va. Inténtalo otra vez.'); }
+    };
+    fila.append(b);
+  });
+  pantalla.append(fila, fb);
+}
+function medio(s){
+  pantalla.append(el('h2', null, 'Elige la caja de agar'));
+  pantalla.append(el('p', null, 'Llega una muestra de orina. Buscas bacilos Gram negativos y quieres ver si fermentan lactosa.'));
+  const opc = [['Agar sangre', pl('#8E1F1F','#F1D9C8','#C0513F')], ['Agar sal y manitol', pl('#C9566E','#F2C200','#F2D95C')], ['Agar MacConkey', pl('#E9A1B0','#F7F1D3')], ['Agar chocolate', pl('#6B3F26','#E8D9BC')]];
+  const g = el('div', 'placas'), fb = el('div');
+  let err = false, listo = false;
+  opc.forEach((o, k) => {
+    const b = el('button', 'placa'); b.innerHTML = o[1] + '<span>'+o[0]+'</span>';
+    b.onclick = () => {
+      if(listo) return;
+      if(k === 2){ listo = true; if(!err){ pts++; ganado[i] = 1; } acierto(b, fb, 'MacConkey es selectivo y diferencial: las colonias que fermentan lactosa se ven rosas.'); }
+      else { err = true; fallo(b, fb, 'Esa caja no sirve para este caso. Inténtalo otra vez.'); }
+    };
+    g.append(b);
+  });
+  pantalla.append(g, fb);
+}
+function asa(s){
+  pantalla.append(el('h2', null, 'Prepara la muestra'));
+  pantalla.append(dib('', '<svg class="arte" viewBox="0 0 170 110" role="img" aria-label="Mechero, asa de siembra y tubo con muestra"><rect x="20" y="72" width="30" height="30" rx="4" fill="#9aa9a4"/><path d="M35 70 c-12 -16 0 -26 0 -36 c14 12 14 24 0 36z" fill="#F28C28"/><rect x="110" y="30" width="30" height="72" rx="12" fill="#cfe8f2" stroke="#3B88B5" stroke-width="3"/><rect x="113" y="58" width="24" height="41" rx="10" fill="#E8D28A"/><path d="M62 24 L100 62" stroke="#12302F" stroke-width="3"/><circle cx="60" cy="22" r="6" fill="none" stroke="#12302F" stroke-width="3"/></svg>'));
+  pantalla.append(el('p', null, 'Esteriliza primero el asa y después toma la muestra.'));
+  const fb = el('div'); let paso = 0, err = false;
+  const b1 = boton('1. Flamear el asa', () => {
+    if(paso) return; paso = 1; b1.disabled = true; fb.innerHTML = ''; fb.append(el('p', 'fb bien', 'Asa estéril.'));
+  }, pantalla);
+  const b2 = boton('2. Tomar la muestra', () => {
+    if(paso === 0){ err = true; fallo(b2, fb, 'Primero flamea el asa; si no, contaminas la muestra.'); return; }
+    if(paso === 2) return; paso = 2; b2.disabled = true; if(!err){ pts++; ganado[i] = 1; }
+    acierto(null, fb, 'Muestra tomada con el asa estéril.');
+  }, pantalla);
+  pantalla.append(fb);
+}
+function siembra(s){
+  pantalla.append(el('h2', null, 'Siembra por estría'));
+  pantalla.append(el('p', null, 'Desliza el dedo sobre la caja en zigzag para extender la muestra.'));
+  const cv = el('canvas'); cv.width = 300; cv.height = 300;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#dfeee9'; x.beginPath(); x.arc(150,150,146,0,7); x.fill();
+  x.fillStyle = '#E9A1B0'; x.beginPath(); x.arc(150,150,132,0,7); x.fill();
+  x.setLineDash([6,8]); x.strokeStyle = 'rgba(255,255,255,.8)'; x.lineWidth = 3; x.beginPath();
+  [[60,90],[240,90],[60,130],[240,130],[60,170],[240,170],[60,210],[240,210]].forEach((p, k) => k ? x.lineTo(p[0],p[1]) : x.moveTo(p[0],p[1]));
+  x.stroke(); x.setLineDash([]); x.strokeStyle = '#FFF6D6'; x.lineWidth = 5; x.lineCap = 'round';
+  let ult = null, largo = 0;
+  const pos = e => { const r = cv.getBoundingClientRect(); return [(e.clientX-r.left)*300/r.width, (e.clientY-r.top)*300/r.height]; };
+  cv.onpointerdown = e => { ult = pos(e); cv.setPointerCapture(e.pointerId); };
+  cv.onpointermove = e => {
+    if(!ult) return; const p = pos(e);
+    x.beginPath(); x.moveTo(ult[0], ult[1]); x.lineTo(p[0], p[1]); x.stroke();
+    largo += Math.hypot(p[0]-ult[0], p[1]-ult[1]); ult = p;
+    if(largo > 700) b.disabled = false;
+  };
+  cv.onpointerup = () => { ult = null; };
+  pantalla.append(cv);
+  const b = boton('Listo, a incubar', siguiente); b.disabled = true;
+}
+function incuba(s){
+  pantalla.append(el('h2', null, 'Incuba la caja'));
+  const d = dib('', '<svg class="arte" viewBox="0 0 170 110" role="img" aria-label="Incubadora a 37 grados"><rect x="30" y="6" width="110" height="98" rx="10" fill="#dfeee9" stroke="#7fa79c" stroke-width="4"/><rect x="42" y="18" width="86" height="60" rx="6" fill="#fff" stroke="#b9cbc3" stroke-width="3"/><circle cx="85" cy="48" r="22" fill="#E9A1B0" stroke="#7fa79c" stroke-width="3"/><text x="85" y="97" font-size="14" text-anchor="middle" fill="#12302F">37 °C</text></svg>');
+  const msg = el('p', null, 'Pon la caja en la incubadora a 37 °C durante 24 horas.');
+  pantalla.append(d, msg);
+  const b = boton('Incubar 24 h', () => {
+    b.disabled = true; msg.textContent = 'Incubando…';
+    setTimeout(() => {
+      sonido('bien');
+      d.innerHTML = '<svg class="arte" viewBox="0 0 100 110" style="max-width:200px" role="img" aria-label="Caja MacConkey con colonias rosas">'+plato(50,'#E9A1B0','#B0124F')+'</svg>';
+      msg.textContent = 'Pasaron 24 horas: aparecieron colonias rosas. Fermentan lactosa.';
+      boton('Siguiente', siguiente);
+    }, 1800);
+  });
+}
+function fin(){
+  sonido('fin');
+  const r = rangos.find(r => pts >= r[0]);
+  pantalla.append(dib('', ART.portada));
+  pantalla.append(el('h2', null, 'Misión terminada'));
+  pantalla.append(el('p', 'puntos', pts+' / 10'));
+  pantalla.append(el('h2', null, r[1]));
+  pantalla.append(el('p', null, r[2]));
+  boton('Jugar de nuevo', () => { i = 0; pts = 0; ganado = {}; mostrar(); });
+}
+mostrar();
+</script>
+</body>
+</html>
